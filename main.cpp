@@ -5,11 +5,13 @@
 #include <string>
 #include <sys/ptrace.h>
 #include <unistd.h>
+#include <dlfcn.h>
 
 struct ProcessInfo{
     std::string m_pid_string{};
     unsigned long long m_base_address{};
     unsigned long long m_libc_address{};
+    unsigned long long m_dlopen_address{};
 };
 
 std::optional<ProcessInfo> get_process_info(std::string_view proc_name){
@@ -43,15 +45,37 @@ std::optional<ProcessInfo> get_process_info(std::string_view proc_name){
             std::string current_page{};
             while(getline(maps_fstream, current_page)){
 
-                if(current_page.find("libc") != std::string::npos){
+                if(current_page.find("libc") != std::string::npos&&
+                current_page.find("r-xp") != std::string::npos
+                    ){
                     std::size_t current_dash_iter = current_page.find('-');
                     std::string libc_base{current_page.substr(0, current_dash_iter)};
                     unsigned long long libc_base_address = std::stoull(libc_base, nullptr,16);
                     temp.m_libc_address = libc_base_address;
                 }
-
-
             }
+            maps_fstream.close();
+
+            auto self_pid = getpid();
+            std::ifstream self_maps("/proc/" + std::to_string(self_pid) + "/maps");
+
+            std::string line;
+            unsigned long long self_libc_base = 0;
+
+            while (std::getline(self_maps, line)) {
+                if (line.find("libc") != std::string::npos && 
+                    line.find("r-xp") != std::string::npos) {
+                    std::size_t dash = line.find('-');
+                    self_libc_base = std::stoull(line.substr(0, dash), nullptr, 16);
+                    break;
+                }
+            }
+            
+            void* dlopen = dlsym(RTLD_DEFAULT, "dlopen");
+
+            unsigned long long dlopen_universal_offset = reinterpret_cast<unsigned long long>(dlopen) - self_libc_base;
+
+            temp.m_dlopen_address = temp.m_libc_address + dlopen_universal_offset;
 
             return temp;
         }
@@ -79,6 +103,8 @@ int main(int argc, const char* argv[]){
     std::cout << valid_object.m_pid_string << "\n";
     std::cout << "program base : 0x" << std::hex <<  valid_object.m_base_address << std::dec << "\n";
     std::cout << "libc    base : 0x" << std::hex <<  valid_object.m_libc_address << std::dec << "\n";
+    std::cout << "dlopen  addr : 0x" << std::hex <<  valid_object.m_dlopen_address << std::dec << "\n";
+
 
 
 
