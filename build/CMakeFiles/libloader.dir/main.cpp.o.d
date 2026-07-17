@@ -171,4 +171,9 @@ CMakeFiles/libloader.dir/main.cpp.o: \
  /usr/include/c++/16/ext/aligned_buffer.h \
  /usr/include/c++/16/bits/align.h \
  /usr/include/c++/16/bits/stl_uninitialized.h \
- /usr/include/c++/16/bits/fs_dir.h /usr/include/c++/16/bits/fs_ops.h
+ /usr/include/c++/16/bits/fs_dir.h /usr/include/c++/16/bits/fs_ops.h \
+ /usr/include/sys/ptrace.h /usr/include/bits/ptrace-shared.h \
+ /usr/include/unistd.h /usr/include/bits/posix_opt.h \
+ /usr/include/bits/environments.h /usr/include/bits/confname.h \
+ /usr/include/bits/getopt_posix.h /usr/include/bits/getopt_core.h \
+ /usr/include/bits/unistd_ext.h /usr/include/linux/close_range.h
