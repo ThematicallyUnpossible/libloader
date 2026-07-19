@@ -1,1 +1,0 @@
-/usr/bin/c++ -g -Wl,--dependency-file=CMakeFiles/libloader.dir/link.d CMakeFiles/libloader.dir/main.cpp.o -o libloader
