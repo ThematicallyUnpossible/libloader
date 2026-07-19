@@ -6,12 +6,15 @@
 #include <sys/ptrace.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <sys/user.h>
 
 struct ProcessInfo{
     std::string m_pid_string{};
+    int m_pid_int{};
     unsigned long long m_base_address{};
     unsigned long long m_libc_address{};
     unsigned long long m_dlopen_address{};
+    unsigned long long m_mmap_address{};
 };
 
 std::optional<ProcessInfo> get_process_info(std::string_view proc_name){
@@ -29,6 +32,8 @@ std::optional<ProcessInfo> get_process_info(std::string_view proc_name){
             ProcessInfo temp{};
 
             temp.m_pid_string = dir.path().filename().string();
+
+            temp.m_pid_int = std::stoi(temp.m_pid_string);
 
             std::ifstream maps_fstream("/proc/" + temp.m_pid_string + "/maps");
 
@@ -77,11 +82,19 @@ std::optional<ProcessInfo> get_process_info(std::string_view proc_name){
 
             temp.m_dlopen_address = temp.m_libc_address + dlopen_universal_offset;
 
+            void* mmap = dlsym(RTLD_DEFAULT, "mmap");
+
+            unsigned long long mmap_universal_offset = reinterpret_cast<unsigned long long>(mmap) - self_libc_base;
+
+            temp.m_mmap_address = temp.m_libc_address + mmap_universal_offset;
+
             return temp;
         }
     }
     return std::nullopt;
 }
+
+
 
 int main(int argc, const char* argv[]){
 
