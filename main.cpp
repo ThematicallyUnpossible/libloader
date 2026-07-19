@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #include <sys/user.h>
+#include <sys/wait.h>
 
 struct ProcessInfo{
     std::string m_pid_string{};
@@ -94,6 +95,72 @@ std::optional<ProcessInfo> get_process_info(std::string_view proc_name){
     return std::nullopt;
 }
 
+bool load_library(ProcessInfo& minfo, std::string libpath) {
+    
+    if(ptrace(PTRACE_ATTACH, minfo.m_pid_int, nullptr, nullptr) < 0){
+        std::cerr << "~Ptrace failed to attach\n";
+        return false;
+    }
+    waitpid(minfo.m_pid_int, nullptr, 0);
+    std::cout << "*Attached ptrace\n";
+
+    struct user_regs_struct backup, main;
+
+    if(ptrace(PTRACE_GETREGS, minfo.m_pid_int, nullptr, &backup) < 0){
+        std::cerr << "~Ptrace failed to get registers\n";
+        return false;
+    }
+
+    main = backup;
+
+    unsigned long long original_rip_address = backup.rip;
+    
+    errno = 0;
+    unsigned long long original_rip_instruction = ptrace(PTRACE_PEEKDATA, minfo.m_pid_int, (void*)original_rip_address, nullptr);
+    if (original_rip_instruction == (unsigned long long)-1 && errno != 0) {
+        std::cerr << "~Ptrace failed to get instructions from the original rip address\n";
+        return false;
+    }
+
+    unsigned long long altered_rip_instruction = (original_rip_instruction & 0xFFFFFFFFFF000000) | 0xCC050F;
+    if(ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)original_rip_address, (void*)altered_rip_instruction) < 0){
+        std::cerr << "~Ptrace failed to write new rip instruction\n";
+        return false;
+    }
+    std::cout << "*Wrote new instruction at current rip\n";
+
+    main.rax = 0x9; 
+    main.rdi = 0x0; 
+    main.rsi = 0x1000;
+    main.rdx = 0x7;
+    main.r10 = 0x22;
+    main.r8 = (unsigned long long)-1;
+    main.r9 = 0;
+
+    if(ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &main) < 0 ){
+        std::cerr << "~Ptrace unable to set the new register to fulfill systemcall.\n";
+        return false;
+    }
+    std::cout << "*Wrote new registers\n";
+
+    ptrace(PTRACE_CONT, minfo.m_pid_int, nullptr, nullptr);
+    waitpid(minfo.m_pid_int, nullptr, 0);
+    std::cout << "*Breakpoint triggered.\n";
+
+    struct user_regs_struct result;
+    if(ptrace(PTRACE_GETREGS, minfo.m_pid_int, nullptr, &result) < 0){
+        std::cerr << "~Ptrace failed to get registers\n";
+        return false;
+    }
+
+    std::cout << "allocated : 0x" << std::hex << result.rax << std::dec << '\n';
+
+    ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)original_rip_address, (void*)original_rip_instruction);
+    ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &backup);
+    ptrace(PTRACE_DETACH, minfo.m_pid_int, nullptr, nullptr);
+
+    return true;
+}
 
 
 int main(int argc, const char* argv[]){
@@ -118,6 +185,7 @@ int main(int argc, const char* argv[]){
     std::cout << "libc    base : 0x" << std::hex <<  valid_object.m_libc_address << std::dec << "\n";
     std::cout << "dlopen  addr : 0x" << std::hex <<  valid_object.m_dlopen_address << std::dec << "\n";
 
+    load_library(valid_object, "");
 
 
 

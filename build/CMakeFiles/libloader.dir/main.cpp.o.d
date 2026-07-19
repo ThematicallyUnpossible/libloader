@@ -178,4 +178,17 @@ CMakeFiles/libloader.dir/main.cpp.o: \
  /usr/include/bits/getopt_posix.h /usr/include/bits/getopt_core.h \
  /usr/include/bits/unistd_ext.h /usr/include/linux/close_range.h \
  /usr/include/dlfcn.h /usr/include/bits/dlfcn.h \
- /usr/include/bits/dl_find_object.h
+ /usr/include/bits/dl_find_object.h /usr/include/sys/user.h \
+ /usr/include/sys/wait.h /usr/include/signal.h \
+ /usr/include/bits/signum-generic.h /usr/include/bits/signum-arch.h \
+ /usr/include/bits/types/sig_atomic_t.h \
+ /usr/include/bits/types/siginfo_t.h /usr/include/bits/types/__sigval_t.h \
+ /usr/include/bits/siginfo-arch.h /usr/include/bits/siginfo-consts.h \
+ /usr/include/bits/siginfo-consts-arch.h \
+ /usr/include/bits/types/sigval_t.h /usr/include/bits/types/sigevent_t.h \
+ /usr/include/bits/sigevent-consts.h /usr/include/bits/sigaction.h \
+ /usr/include/bits/sigcontext.h /usr/include/bits/types/stack_t.h \
+ /usr/include/sys/ucontext.h /usr/include/bits/sigstack.h \
+ /usr/include/bits/sigstksz.h /usr/include/bits/ss_flags.h \
+ /usr/include/bits/types/struct_sigstack.h /usr/include/bits/sigthread.h \
+ /usr/include/bits/signal_ext.h /usr/include/bits/types/idtype_t.h
