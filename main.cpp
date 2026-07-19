@@ -95,11 +95,11 @@ std::optional<ProcessInfo> get_process_info(std::string_view proc_name){
     return std::nullopt;
 }
 
-bool load_library(ProcessInfo& minfo, std::string libpath) {
+std::optional<unsigned long long> allocate_memory(ProcessInfo& minfo) {
     
     if(ptrace(PTRACE_ATTACH, minfo.m_pid_int, nullptr, nullptr) < 0){
         std::cerr << "~Ptrace failed to attach\n";
-        return false;
+        return std::nullopt;
     }
     waitpid(minfo.m_pid_int, nullptr, 0);
     std::cout << "*Attached ptrace\n";
@@ -108,7 +108,7 @@ bool load_library(ProcessInfo& minfo, std::string libpath) {
 
     if(ptrace(PTRACE_GETREGS, minfo.m_pid_int, nullptr, &backup) < 0){
         std::cerr << "~Ptrace failed to get registers\n";
-        return false;
+        return std::nullopt;
     }
 
     main = backup;
@@ -119,13 +119,13 @@ bool load_library(ProcessInfo& minfo, std::string libpath) {
     unsigned long long original_rip_instruction = ptrace(PTRACE_PEEKDATA, minfo.m_pid_int, (void*)original_rip_address, nullptr);
     if (original_rip_instruction == (unsigned long long)-1 && errno != 0) {
         std::cerr << "~Ptrace failed to get instructions from the original rip address\n";
-        return false;
+        return std::nullopt;
     }
 
     unsigned long long altered_rip_instruction = (original_rip_instruction & 0xFFFFFFFFFF000000) | 0xCC050F;
     if(ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)original_rip_address, (void*)altered_rip_instruction) < 0){
         std::cerr << "~Ptrace failed to write new rip instruction\n";
-        return false;
+        return std::nullopt;
     }
     std::cout << "*Wrote new instruction at current rip\n";
 
@@ -139,7 +139,7 @@ bool load_library(ProcessInfo& minfo, std::string libpath) {
 
     if(ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &main) < 0 ){
         std::cerr << "~Ptrace unable to set the new register to fulfill systemcall.\n";
-        return false;
+        return std::nullopt;
     }
     std::cout << "*Wrote new registers\n";
 
@@ -150,10 +150,10 @@ bool load_library(ProcessInfo& minfo, std::string libpath) {
     struct user_regs_struct result;
     if(ptrace(PTRACE_GETREGS, minfo.m_pid_int, nullptr, &result) < 0){
         std::cerr << "~Ptrace failed to get registers\n";
-        return false;
+        return std::nullopt;
     }
 
-    std::cout << "allocated : 0x" << std::hex << result.rax << std::dec << '\n';
+    std::cout << "*Allocated at 0x" << std::hex << result.rax << std::dec << '\n';
 
     ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)original_rip_address, (void*)original_rip_instruction);
     ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &backup);
@@ -185,7 +185,12 @@ int main(int argc, const char* argv[]){
     std::cout << "libc    base : 0x" << std::hex <<  valid_object.m_libc_address << std::dec << "\n";
     std::cout << "dlopen  addr : 0x" << std::hex <<  valid_object.m_dlopen_address << std::dec << "\n";
 
-    load_library(valid_object, "");
+    std::optional<unsigned long long> allocated_address = allocate_memory(valid_object);
+    unsigned long long valid_allocated_address{};
+    if(allocated_address){
+        valid_allocated_address = allocated_address.value();
+        return 1;
+    }
 
 
 
