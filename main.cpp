@@ -117,7 +117,7 @@ std::optional<unsigned long long> allocate_memory(ProcessInfo& minfo) {
     
     errno = 0;
     unsigned long long original_rip_instruction = ptrace(PTRACE_PEEKDATA, minfo.m_pid_int, (void*)original_rip_address, nullptr);
-    if (original_rip_instruction == (unsigned long long)-1 && errno != 0) {
+    if (errno != 0) {
         std::cerr << "~Ptrace failed to get instructions from the original rip address\n";
         return std::nullopt;
     }
