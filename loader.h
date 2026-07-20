@@ -1,6 +1,7 @@
 #ifndef LOADER
 #define LOADER
 
+#include <cstddef>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -11,7 +12,10 @@
 #include <dlfcn.h>
 #include <sys/user.h>
 #include <sys/wait.h>
-
+#include <sys/uio.h>
+#include <cerrno>
+#include <cstring>
+#include <algorithm>
 
 struct ProcessInfo{
     std::string m_pid_string{};
@@ -99,11 +103,11 @@ inline std::optional<ProcessInfo> get_process_info(std::string_view proc_name){
     return std::nullopt;
 }
 
-inline std::optional<unsigned long long> allocate_memory(ProcessInfo& minfo) {
+inline bool load_library(ProcessInfo& minfo, std::string path) {
     
     if(ptrace(PTRACE_ATTACH, minfo.m_pid_int, nullptr, nullptr) < 0){
         std::cerr << "~Ptrace failed to attach\n";
-        return std::nullopt;
+        return false;
     }
     waitpid(minfo.m_pid_int, nullptr, 0);
     std::cout << "*Attached ptrace\n";
@@ -112,7 +116,7 @@ inline std::optional<unsigned long long> allocate_memory(ProcessInfo& minfo) {
 
     if(ptrace(PTRACE_GETREGS, minfo.m_pid_int, nullptr, &backup) < 0){
         std::cerr << "~Ptrace failed to get registers\n";
-        return std::nullopt;
+        return false;
     }
 
     main = backup;
@@ -123,13 +127,13 @@ inline std::optional<unsigned long long> allocate_memory(ProcessInfo& minfo) {
     unsigned long long original_rip_instruction = ptrace(PTRACE_PEEKDATA, minfo.m_pid_int, (void*)original_rip_address, nullptr);
     if (errno != 0) {
         std::cerr << "~Ptrace failed to get instructions from the original rip address\n";
-        return std::nullopt;
+        return false;
     }
 
     unsigned long long altered_rip_instruction = (original_rip_instruction & 0xFFFFFFFFFF000000) | 0xCC050F;
     if(ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)original_rip_address, (void*)altered_rip_instruction) < 0){
         std::cerr << "~Ptrace failed to write new rip instruction\n";
-        return std::nullopt;
+        return false;
     }
     std::cout << "*Wrote new instruction at current rip\n";
 
@@ -143,7 +147,7 @@ inline std::optional<unsigned long long> allocate_memory(ProcessInfo& minfo) {
 
     if(ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &main) < 0 ){
         std::cerr << "~Ptrace unable to set the new register to fulfill systemcall.\n";
-        return std::nullopt;
+        return false;
     }
     std::cout << "*Wrote new registers\n";
 
@@ -154,10 +158,35 @@ inline std::optional<unsigned long long> allocate_memory(ProcessInfo& minfo) {
     struct user_regs_struct result;
     if(ptrace(PTRACE_GETREGS, minfo.m_pid_int, nullptr, &result) < 0){
         std::cerr << "~Ptrace failed to get registers\n";
-        return std::nullopt;
+        return false;
     }
 
     std::cout << "*Allocated at 0x" << std::hex << result.rax << std::dec << '\n';
+
+    int path_size = path.size() + 1;
+    for(int i{}; i < path_size; i += 8){
+        int used_byte_count = std::min(8, (path_size - i));
+        unsigned long long memory_string_address{};
+        memcpy(&memory_string_address, path.data() + i, used_byte_count);
+        if(ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)(result.rax + i), (void*)memory_string_address) < 0){
+            std::cerr << "~Ptrace failed to write at string offset : " << i << "\n";
+            return false;
+        }
+    }
+
+    char written_string[256] = {};
+    struct iovec local_read_region{
+        .iov_base = written_string,
+        .iov_len = (std::size_t)path_size,
+    };
+    struct iovec remote_read_region{
+        .iov_base = (void*)result.rax,
+        .iov_len = (std::size_t)path_size,
+    };
+
+    process_vm_readv(minfo.m_pid_int, &local_read_region, 1, &remote_read_region, 1, 0);
+
+    std::cout << "*Written string : " << written_string << '\n';
 
     ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)original_rip_address, (void*)original_rip_instruction);
     ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &backup);

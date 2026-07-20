@@ -5,8 +5,8 @@
 
 int main(int argc, const char* argv[]){
 
-    if(argc != 2){
-        std::cerr << "Invalid usage. Expected : sudo ./libloader <process name>\n";
+    if(argc != 3){
+        std::cerr << "Invalid usage. Expected : sudo ./libloader <process name> <lib_path>\n";
         return 1;
     }
 
@@ -25,12 +25,13 @@ int main(int argc, const char* argv[]){
     std::cout << "libc    base : 0x" << std::hex <<  valid_object.m_libc_address << std::dec << "\n";
     std::cout << "dlopen  addr : 0x" << std::hex <<  valid_object.m_dlopen_address << std::dec << "\n";
 
-    std::optional<unsigned long long> allocated_address = allocate_memory(valid_object);
-    unsigned long long valid_allocated_address{};
-    if(allocated_address){
-        valid_allocated_address = allocated_address.value();
+    bool load_success = load_library(valid_object, argv[2]);
+    if(!load_success){
         return 1;
     }
+
+    
+
 
 
 
