@@ -188,6 +188,52 @@ inline bool load_library(ProcessInfo& minfo, std::string path) {
 
     std::cout << "*Written string : " << written_string << '\n';
 
+
+    ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)original_rip_address, (void*)original_rip_instruction);
+    ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &backup);
+
+    //ill now attempt to try dlopen and implement the stack alignment prochedure
+
+    unsigned long long phase2_original_rip_address = main.rip;
+
+    errno = 0;
+    unsigned long long phase2_original_rip_instruction = ptrace(PTRACE_PEEKDATA, minfo.m_pid_int, (void*)main.rip, nullptr);
+    if(errno != 0){
+        std::cerr << "~Ptrace failed to fetch phase 2 rip original instruction. : " << strerror(errno);
+        return false;
+    }
+
+    unsigned long long phase2_altered_rip_instruction = ( phase2_original_rip_instruction & 0xFFFFFFFFFF000000 ) | 0xCCD0FF;
+
+    if(ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)original_rip_address, (void*)phase2_altered_rip_instruction)  < 0 ){
+        std::cerr << "~Ptrace failed to write phase two rip's new instruction\n";
+        return false;
+    }
+
+    main.rax = minfo.m_dlopen_address;
+    main.rdi = result.rax;
+    main.rsi = (unsigned long long)2;
+    main.rsp = main.rsp & 0xFFFFFFFFFFFFFFF0;
+
+    if(ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &main) < 0){
+        std::cerr << "~Ptrace failed to set dlopen registers\n";
+        return false;
+    }
+    std::cout << "*Dlopen registers ready, ";
+
+    if(ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &main) < 0){
+        std::cerr << "~Ptrace failed to write phase 2 new register\n";
+        return false;
+    }
+    std::cout << "invoking.. ";
+
+    ptrace(PTRACE_CONT, minfo.m_pid_int, nullptr, nullptr);
+    waitpid(minfo.m_pid_int, nullptr, 0);
+
+    std::cout << "done.\n";
+
+
+
     ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)original_rip_address, (void*)original_rip_instruction);
     ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &backup);
     ptrace(PTRACE_DETACH, minfo.m_pid_int, nullptr, nullptr);
