@@ -103,7 +103,7 @@ inline std::optional<ProcessInfo> get_process_info(std::string_view proc_name){
     return std::nullopt;
 }
 
-inline bool load_library(ProcessInfo& minfo, std::string path) {
+inline bool load_library_ptrace(ProcessInfo& minfo, std::string path) {
     
     if(ptrace(PTRACE_ATTACH, minfo.m_pid_int, nullptr, nullptr) < 0){
         std::cerr << "~Ptrace failed to attach\n";

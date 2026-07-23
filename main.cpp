@@ -1,4 +1,3 @@
-#include <climits>
 #include <iostream>
 #include <optional>
 #include "loader.h"
@@ -61,7 +60,7 @@ int main(int argc, const char* argv[]){
                         "2.ManualMap\n";
     prompt_mutate<int>(modes, "Select loading method : ", choice, 1, 2);
     if(choice == 1){
-        bool load_success = load_library(valid_object, argv[2]);
+        bool load_success = load_library_ptrace(valid_object, argv[2]);
         if(!load_success){
             return 1;
         }
