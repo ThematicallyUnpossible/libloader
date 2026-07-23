@@ -232,8 +232,6 @@ inline bool load_library(ProcessInfo& minfo, std::string path) {
 
     std::cout << "done.\n";
 
-
-
     ptrace(PTRACE_POKEDATA, minfo.m_pid_int, (void*)original_rip_address, (void*)original_rip_instruction);
     ptrace(PTRACE_SETREGS, minfo.m_pid_int, nullptr, &backup);
     ptrace(PTRACE_DETACH, minfo.m_pid_int, nullptr, nullptr);
