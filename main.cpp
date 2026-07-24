@@ -55,19 +55,22 @@ int main(int argc, const char* argv[]){
     std::cout << "libc    base : 0x" << std::hex <<  valid_object.m_libc_address << std::dec <<   "\n";
     std::cout << "dlopen  addr : 0x" << std::hex <<  valid_object.m_dlopen_address << std::dec << "\n";
 
-    int choice{};
-    std::string modes = "1.Ptrace\n"
-                        "2.ManualMap\n";
-    prompt_mutate<int>(modes, "Select loading method : ", choice, 1, 2);
-    if(choice == 1){
-        bool load_success = load_library_ptrace(valid_object, argv[2]);
-        if(!load_success){
-            return 1;
+    while(true){
+        int choice{};
+        std::string modes = "1.Ptrace\n"
+                            "2.ManualMap\n";
+        prompt_mutate<int>(modes, "Select loading method : ", choice, 1, 2);
+        if(choice == 1){
+            bool load_success = load_library_ptrace(valid_object, argv[2]);
+            if(!load_success){
+                return 1;
+            }
+        }
+        else if (choice == 2){
+            std::cout << "wip\n";
         }
     }
-    else{
-        std::cout << "wip\n";
-    }
+    
 
 
     
