@@ -2,6 +2,7 @@
 #define LOADER
 
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -16,6 +17,10 @@
 #include <cerrno>
 #include <cstring>
 #include <algorithm>
+#include <elf.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 
 struct ProcessInfo{
     std::string m_pid_string{};
@@ -239,7 +244,67 @@ inline bool load_library_ptrace(ProcessInfo& minfo, std::string path) {
     return true;
 }
 
+inline bool load_library_manualmap(ProcessInfo& minfo, std::string path){
 
+    std::cerr << "wip.\n";
+    return true;
+
+
+
+
+    std::string target_filename = path;
+
+    int target_fd = open(target_filename.c_str(), O_RDONLY);
+
+    unsigned long long data_address{};
+
+    struct stat target_stat{};
+
+    if(fstat(target_fd, &target_stat) < 0 ){
+        std::cerr << "~Failed to stat target program";
+        close(target_fd);
+        return false;
+    }
+
+    std::size_t target_size = target_stat.st_size;
+    
+    const std::uint8_t *allocated_ptr = reinterpret_cast<const std::uint8_t*>(mmap(nullptr, target_size, PROT_READ, MAP_PRIVATE, target_fd, 0));
+    if(allocated_ptr == MAP_FAILED){
+        std::cerr << "~Mmap failed to allocate & map memory";
+        close(target_fd);
+        return false;
+    }
+
+    if(target_size < sizeof(Elf64_Ehdr)){
+        std::cerr << "~Target is smaller than required, preventing sigsegv.\n";
+        munmap(const_cast<std::uint8_t*>(allocated_ptr), target_size);
+        return false;
+    }
+
+    const auto* header = reinterpret_cast<const Elf64_Ehdr*>(allocated_ptr);
+
+    if(memcmp(header->e_ident, ELFMAG, SELFMAG) != 0){
+        std::cerr << "~Target isnt a ELF file.\n";
+        return false;
+    }
+
+    std::cout << "ELF Entry Point: 0x" << std::hex << header->e_entry << std::dec << "\n";
+
+    if (header->e_shoff == 0 || header->e_shnum == 0) {
+        std::cout << "No section headers found.\n";
+        munmap(const_cast<uint8_t*>(allocated_ptr), target_size);
+        close(target_fd);
+        return false;
+    }
+
+    
+    munmap(const_cast<uint8_t*>(allocated_ptr), target_size);
+    close(target_fd);
+
+
+
+    return true;
+}
 
 
 #endif 
