@@ -1,6 +1,7 @@
 #include <iostream>
 #include <optional>
 #include "loader.h"
+#include "trigger.h"
 #include <type_traits>
 #include <limits>
 
@@ -61,6 +62,7 @@ int main(int argc, const char* argv[]){
                             "2.ManualMap\n"
                             "3.Trigger lib\n";
         prompt_mutate<int>(modes, "Select loading method : ", choice, 1, 2);
+
         if(choice == 1){
             bool load_success = load_library_ptrace(valid_object, argv[2]);
             if(!load_success){
@@ -68,10 +70,13 @@ int main(int argc, const char* argv[]){
             }
         }
         else if (choice == 2){
-            bool  load_success = load_library_manualmap(valid_object, argv[2]);
+            bool load_success = load_library_manualmap(valid_object, argv[2]);
             if(!load_success){
                 return 1;
             }
+        }
+        else if(choice == 3){
+            trigger_hook(valid_object);
         }
     }
     

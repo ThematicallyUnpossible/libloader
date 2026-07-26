@@ -1,20 +1,21 @@
 #ifndef TRIGGER 
 #define TRIGGER
 #include "loader.h"
+#include <string>
 
-struct Target{
-    unsigned long long hook_offset{};
-    unsigned long long function_offset{};
-};
 
-inline void trigger_hook(ProcessInfo& minfo, Target& tinfo){
-    char bytes_to_write[14];
-    bytes_to_write[0] = 0xFF;
-    bytes_to_write[1] = 0x25;
-    bytes_to_write[2] = 0x00;
-    bytes_to_write[4] = 0x00;
-    bytes_to_write[5] = 0x00;
-    bytes_to_write[6] = 0x00; 
+inline void trigger_hook(ProcessInfo& minfo){
+    
+    //figure out the base of the hook function
+    //firstly we have to find the location of the lib inside the target.
+
+    std::ifstream maps_fstream("/proc/"+minfo.m_pid_string+"/maps");
+    std::string current_page{};
+    while(std::getline(maps_fstream, current_page)){
+        std::cout << current_page << '\n';
+    }
+
+    
 }
 
 #endif
