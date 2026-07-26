@@ -2,9 +2,8 @@
 #include <optional>
 #include "loader.h"
 #include "trigger.h"
-#include <type_traits>
 #include <limits>
-
+#include <type_traits>
 
 void refresh_cin(){
     std::cin.clear();
@@ -61,7 +60,7 @@ int main(int argc, const char* argv[]){
         std::string modes = "1.Ptrace\n"
                             "2.ManualMap\n"
                             "3.Trigger lib\n";
-        prompt_mutate<int>(modes, "Select loading method : ", choice, 1, 2);
+        prompt_mutate<int>(modes, "Select loading method : ", choice, 1, 3);
 
         if(choice == 1){
             bool load_success = load_library_ptrace(valid_object, argv[2]);
@@ -76,7 +75,8 @@ int main(int argc, const char* argv[]){
             }
         }
         else if(choice == 3){
-            trigger_hook(valid_object);
+            Target sub{.lib_name = "libfcnhook.so", .hook_fcn_offset = 0x1119,.original_fcn_offset = 0x2377};
+            trigger_hook(valid_object, sub);
         }
     }
     
