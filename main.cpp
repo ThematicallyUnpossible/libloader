@@ -4,6 +4,7 @@
 #include "trigger.h"
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 void refresh_cin(){
     std::cin.clear();
@@ -31,6 +32,27 @@ template<typename T>
     }
     target = temporary;
     return;
+}
+
+Target make_target(){
+    std::cout << "?Enter original function offset : ";
+    std::string original_string{};
+    refresh_cin();
+    std::getline(std::cin, original_string);
+    unsigned long long original_offset_ull{};
+    original_offset_ull = std::stoull(original_string, nullptr, 16);
+
+    std::cout << "?Enter hook function offset : ";
+    std::string hook_string{};
+    std::getline(std::cin, hook_string);
+    unsigned long long hook_offset_ull{};
+    hook_offset_ull = std::stoull(hook_string, nullptr, 16);
+
+    std::cout << "?Enter lib name : ";
+    std::string lib_string{};
+    std::getline(std::cin, lib_string);
+
+    return {.lib_name = std::move(lib_string), .hook_fcn_offset = hook_offset_ull, .original_fcn_offset = original_offset_ull};
 }
 
 int main(int argc, const char* argv[]){
@@ -75,8 +97,8 @@ int main(int argc, const char* argv[]){
             }
         }
         else if(choice == 3){
-            Target sub{.lib_name = "libfcnhook.so", .hook_fcn_offset = 0x1119,.original_fcn_offset = 0x2377};
-            trigger_hook(valid_object, sub);
+            Target target = make_target();
+            trigger_hook(valid_object, target);
         }
     }
     

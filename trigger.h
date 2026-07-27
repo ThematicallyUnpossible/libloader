@@ -79,7 +79,7 @@ inline bool trigger_hook(ProcessInfo& minfo, Target& target){
     ssize_t byte_written = write(target_fd, bytes_to_write, 14);
     close(target_fd);
 
-    std::cout << "*Function HOOKED.\n";
+    std::cout << "*Done.\n";
     return true;
 }
 
