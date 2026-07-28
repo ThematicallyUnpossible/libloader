@@ -19,7 +19,7 @@ inline bool trigger_hook(ProcessInfo& minfo, Target& target){
     std::ifstream maps_fstream("/proc/"+minfo.m_pid_string+"/maps");
     std::string current_page{};
 
-    unsigned long long lib_rxp_base{};
+    unsigned long long lib_base{};
     while(std::getline(maps_fstream, current_page)){
 
         std::size_t dash_index = current_page.find('-');
@@ -34,7 +34,7 @@ inline bool trigger_hook(ProcessInfo& minfo, Target& target){
             std::cout << "*Found lib's base at 0x"<< temporary_address_string << '\n';    
             
             try{ 
-                lib_rxp_base = std::stoull(temporary_address_string, nullptr, 16);
+                lib_base = std::stoull(temporary_address_string, nullptr, 16);
             }
             catch(...){
                 std::cerr << "~Failed to convert string to ull\n";
@@ -46,14 +46,14 @@ inline bool trigger_hook(ProcessInfo& minfo, Target& target){
     }
     maps_fstream.close();
 
-    if(!lib_rxp_base){
-        std::cerr << "~Lib not found. Is it loaded?";
+    if(!lib_base){
+        std::cerr << "~Lib not found. Is it loaded?\n";
         return false;
     }
 
     
     unsigned long long original_function_address = minfo.m_base_address + target.original_fcn_offset;
-    unsigned long long hooked_function_address = lib_rxp_base + target.hook_fcn_offset;
+    unsigned long long hooked_function_address = lib_base + target.hook_fcn_offset;
 
     //calculation complete, ill try to write the instruction directly into memory stream
 
@@ -71,7 +71,7 @@ inline bool trigger_hook(ProcessInfo& minfo, Target& target){
     std::string path_to_mem{"/proc/"+minfo.m_pid_string+"/mem"};
     int target_fd = open(path_to_mem.c_str(), O_WRONLY);
     if(target_fd < 0){
-        std::cerr << "~Failed to open " + path_to_mem;
+        std::cerr << "~Failed to open " + path_to_mem << '\n';
         return false;
     }
 

@@ -6,5 +6,6 @@ set(EXPORT_COMPILE_COMMANDS ON)
 add_executable(libloader main.cpp
     loader.h
     trigger.h
+    unified_system.h
 )
 

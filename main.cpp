@@ -1,10 +1,10 @@
 #include <iostream>
 #include <optional>
-#include "loader.h"
 #include "trigger.h"
 #include <limits>
 #include <type_traits>
 #include <utility>
+#include "unified_system.h"
 
 void refresh_cin(){
     std::cin.clear();
@@ -62,53 +62,16 @@ int main(int argc, const char* argv[]){
         return 1;
     }
 
-    std::string_view target_string{argv[1]}; 
-
-    auto info_optional = get_process_info(target_string);
-
-    ProcessInfo valid_object{};
-
-    if(info_optional){
-        valid_object = std::move(info_optional.value());
+    std::optional<System> syso_optional = System::initialize(argv[1], argv[2]);
+    if(!syso_optional){
+        std::cerr << "Error : failed to create system object\n";
+        return 1;
     }
 
-    std::cout << valid_object.m_pid_string << "\n";
-    std::cout << "program base : 0x" << std::hex <<  valid_object.m_base_address << std::dec <<   "\n";
-    std::cout << "libc    base : 0x" << std::hex <<  valid_object.m_libc_address << std::dec <<   "\n";
-    std::cout << "dlopen  addr : 0x" << std::hex <<  valid_object.m_dlopen_address << std::dec << "\n";
-
-    while(true){
-        int choice{};
-        std::string modes = "1.Ptrace\n"
-                            "2.ManualMap\n"
-                            "3.Trigger lib\n";
-        prompt_mutate<int>(modes, "Select loading method : ", choice, 1, 3);
-
-        if(choice == 1){
-            bool load_success = load_library_ptrace(valid_object, argv[2]);
-            if(!load_success){
-                return 1;
-            }
-        }
-        else if (choice == 2){
-            bool load_success = load_library_manualmap(valid_object, argv[2]);
-            if(!load_success){
-                return 1;
-            }
-        }
-        else if(choice == 3){
-            Target target = make_target();
-            trigger_hook(valid_object, target);
-        }
-    }
-    
-
-
-    
-
-    
-
-
-
-
+    syso_optional.value().print_pid();
+    syso_optional.value().fetch_data();
 }
+    
+
+
+
