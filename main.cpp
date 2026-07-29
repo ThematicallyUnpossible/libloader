@@ -68,8 +68,8 @@ int main(int argc, const char* argv[]){
         return 1;
     }
 
-    syso_optional.value().print_pid();
     syso_optional.value().fetch_data();
+    syso_optional.value().ptrace_load();
 }
     
 
