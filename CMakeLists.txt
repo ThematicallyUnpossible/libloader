@@ -4,8 +4,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED)
 set(EXPORT_COMPILE_COMMANDS ON)
 add_executable(libloader main.cpp
-    loader.h
-    trigger.h
-    unified_system.h
+    loader_system.h
 )
 
