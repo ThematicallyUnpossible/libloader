@@ -80,19 +80,19 @@ void print_pid() const{
 }
 
 bool fetch_data(){
-    std::ifstream maps_fstream("/proc/"+m_pid_string+"/maps");
-    if(!maps_fstream){
+    std::ifstream target_maps_fstream("/proc/"+m_pid_string+"/maps");
+    if(!target_maps_fstream){
         return false;
     }
     
-    auto dlsym_lite_base = [this, &maps_fstream](std::string target, std::string permission)->unsigned long long{
+    auto dlsym_lite_base = [this](std::ifstream& stream, std::string target, std::string permission)->unsigned long long{
 
-        maps_fstream.clear();
-        maps_fstream.seekg(0, std::ios::beg);
+        stream.clear();
+        stream.seekg(0, std::ios::beg);
 
         std::string current_page{};
     
-        while(getline(maps_fstream, current_page)){
+        while(getline(stream, current_page)){
             if(current_page.find(target) != std::string::npos && current_page.find(target) != std::string::npos){
                 std::size_t dash_iter = current_page.find(' ');
                 std::string memory_string{current_page.substr(0, dash_iter)};
@@ -103,33 +103,28 @@ bool fetch_data(){
         return 0;
     };
 
-    m_sys_data.m_program_base = dlsym_lite_base( m_program_name, "r");
-    m_sys_data.m_libc_base = dlsym_lite_base("libc.so", "r");
+    m_sys_data.m_program_base = dlsym_lite_base(target_maps_fstream, m_program_name, "r");
+    m_sys_data.m_libc_base = dlsym_lite_base(target_maps_fstream, "libc.so", "r");
 
 
     //figuring out offset
 
     std::ifstream self_fstream("/proc/"+std::to_string(getpid())+"/maps");
-    std::string first_page {};
-    getline(self_fstream, first_page);
-    std::size_t self_dash_index = first_page.find('-');
-    std::string self_program_base_string = first_page.substr(0, self_dash_index);
-
-    unsigned long long self_program_base = std::stoull(self_program_base_string, nullptr, 16);
+    unsigned long long self_libc_base  = dlsym_lite_base(self_fstream, "libc.so", "r");
 
     void* self_mmap = dlsym(RTLD_DEFAULT, "mmap");
     if(!self_mmap){
         std::cerr << "couldnt find local mmap.";
         return false;
     }
-    unsigned long long mmap_offset = (*static_cast<unsigned long long*>(self_mmap)) - self_program_base;
+    unsigned long long mmap_offset = (reinterpret_cast<unsigned long long>(self_mmap)) - self_libc_base;
 
     void* self_dlopen = dlsym(RTLD_DEFAULT, "dlopen");
     if(!self_dlopen){
         std::cerr << "coudlnt find local dlopen";
         return false;
     }
-    unsigned long long dlopen_offset = (*static_cast<unsigned long long*>(self_dlopen) - self_program_base);
+    unsigned long long dlopen_offset = (reinterpret_cast<unsigned long long>(self_dlopen) - self_libc_base);
 
     m_sys_data.m_mmap_address = m_sys_data.m_libc_base + mmap_offset;
     m_sys_data.m_dlopen_address = m_sys_data.m_libc_base  + dlopen_offset;
@@ -138,138 +133,139 @@ bool fetch_data(){
     }
 
 bool ptrace_load(){
+
+    ////////////////////////////////////////////////////////////
+    /////////////////////// MMAP SECTION ///////////////////////
+    ////////////////////////////////////////////////////////////
+
     ptrace(PTRACE_ATTACH, m_pid_int, nullptr, nullptr);
     waitpid(m_pid_int, nullptr, 0);
-    std::cout << "attached ptrace." << "\n";
 
-    struct user_regs_struct backup, used;
-    if(ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &used) < 0){
+    struct user_regs_struct backup, current, result;
+    if(ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &backup) < 0){
         std::cerr << "unable to get registers #1" << "\n";
         return false;
     }
 
-    backup = used;
+    current = backup;
 
-    used.rax = 0x9;
-    used.rdi = 0;
-    used.rsi = 0x1000;
-    used.rdx = 0x7;
-    used.r10 = 0x22;
-    used.r8 = static_cast<unsigned long long>(-1);
-    used.r9 = 0;
+    current.rax = 0x9;
+    current.rdi = 0;
+    current.rsi = 0x1000;
+    current.rdx = 0x7;
+    current.r10 = 0x22;
+    current.r8 = static_cast<unsigned long long>(-1);
+    current.r9 = 0;
  
- 
+    unsigned long long phase1_rip_address{current.rip};
     errno = 0;
-    unsigned long long phase1_original_rip = ptrace(PTRACE_PEEKDATA, m_pid_int, reinterpret_cast<void*>(used.rip), nullptr);
+    unsigned long long original_rip_instruction = ptrace(PTRACE_PEEKDATA, m_pid_int, reinterpret_cast<void*>(phase1_rip_address), nullptr );
     if(errno != 0){
-        std::cerr << "unable to get phase 1 rip instruction : " << strerror(errno) << "\n";
-        return false;
-    }
-    std::cout << "current rip instruction : " << std::hex << phase1_original_rip << std::dec << "\n";
-
-    unsigned long long phase1_modified_rip = (phase1_original_rip & 0xFFFFFFFFFF000000) | 0xCC050F;
-    if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(used.rip), reinterpret_cast<void*>(phase1_modified_rip)) < 0 ){
-        std::cerr << "unable to modify phase 1 rip instruction" << "\n";
-        return false;
-    }
-    std::cout << "new rip instruction : " << phase1_modified_rip << "\n";
-
-    if(ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &used) < 0){
-        std::cerr << "failed to set new register" << "\n";
+        std::cerr << "unable to get phase1 rip instruction" << "\n";\
         return false;
     }
 
-    std::cout << "ptrace succesfully set new register." << "\n";
-    std::cout << "assumed mmap address : 0x" << std::hex << m_sys_data.m_mmap_address << std::dec << "\n";
+    unsigned long long phase1_altered_rip_instruction = (original_rip_instruction & 0xFFFFFFFFFF000000) | 0xCC050F;
+    if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(phase1_rip_address), reinterpret_cast<void*>(phase1_altered_rip_instruction)) < 0){
+        std::cerr << "unable to set phase1 new rip instruction" << "\n";
+        return false;
+    }
+
+    if(ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &current) < 0){
+        std::cerr << "unable to set phase1 new registers" << "\n";
+        return false;
+    }
 
     ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr);
     waitpid(m_pid_int, nullptr, 0);
 
-    std::cout << "target program triggered 0xCC." << "\n";
-
-    struct user_regs_struct result;
-    ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &result);
-
-    unsigned long long allocated = result.rax;
-    std::cout << "allocated region for string path at 0x" << std::hex << allocated <<  std::dec <<  "\n";
-
-    struct iovec local_iov {
-        .iov_base = (void*)m_lib_path.data(),
-        .iov_len  = m_lib_path.size() + 1   
-    };
-    struct iovec remote_iov {
-        .iov_base = (void*)allocated,
-        .iov_len  = m_lib_path.size() + 1
-    };
-
-    ssize_t written = process_vm_writev(m_pid_int, &local_iov, 1, &remote_iov, 1, 0);
-    if (written == -1) {
-        std::cerr << "process_vm_writev failed." << "\n";
+    if(ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &result) < 0){
+        std::cerr << "unable to get registers for result" << "\n";
         return false;
     }
 
-    ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(backup.rip), reinterpret_cast<void*>(phase1_original_rip));
-    //reset it to make sure dl open have no issue
+    unsigned long long allocated_address = result.rax;
+    std::cout << "syscall mmap returned : 0x" << std::hex << allocated_address << std::dec << "\n";
 
-    used = backup;
-
-    used.rax = m_sys_data.m_dlopen_address;
-    used.rdi = allocated;
-    used.rsi = 0x2;
+    ////////////////////////////////////////////////////////////
+    /////////////////////// WRITE PATH SECTION /////////////////
+    ////////////////////////////////////////////////////////////
 
 
-    errno = 0;
-    unsigned long long phase2_original_rip = ptrace(PTRACE_PEEKDATA, m_pid_int, reinterpret_cast<void*>(used.rip), nullptr);
-    if(errno != 0){
-        std::cerr << "unable to get phase 2 rip instruction : " << strerror(errno) << "\n";
-        return false;
-    }                   
-    std::cout << "current rip instruction : " << std::hex << phase2_original_rip << std::dec << "\n";
+    const std::size_t lib_length = m_lib_path.size() + 1;
+    struct iovec local_write_region{
+        .iov_base = m_lib_path.data(),
+        .iov_len = lib_length
+    };
+    struct iovec remote_write_region{
+        .iov_base = reinterpret_cast<void*>(allocated_address),
+        .iov_len = lib_length
+    };
 
-    unsigned long long phase2_modified_rip = (phase2_original_rip & 0xFFFFFFFFFF000000) | 0xCCD0FF;
-    if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(used.rip), reinterpret_cast<void*>(phase2_modified_rip)) < 0){
-        std::cerr << "unable to modify phase 2 rip instruction" << "\n";
+    ssize_t bytes_written = process_vm_writev(m_pid_int, &local_write_region, 1, &remote_write_region, 1, 0);
+    if(bytes_written != lib_length){
+        std::cerr << "unable to properly write lib path" << "\n";
         return false;
     }
-    std::cout << "new rip instruction : " << std::hex << phase2_modified_rip << std::dec << "\n";
 
-    std::cout << "assumed dlopen address : 0x" << std::hex << m_sys_data.m_dlopen_address << std::dec << "\n"; 
-    used.rsp = used.rsp & 0xFFFFFFFFFFFFFFF0;
-    std::cout << "stack aligned : 0x" << std::hex << used.rsp << std::dec << "\n"; 
+    char written[lib_length];
+    struct iovec local_read_region{
+        .iov_base = written,
+        .iov_len = lib_length,
+    };
+    struct iovec remote_read_region{
+        .iov_base = reinterpret_cast<void*>(allocated_address),
+        .iov_len = lib_length,
+    };
 
+    ssize_t bytes_read = process_vm_readv(m_pid_int, &local_read_region, 1, &remote_read_region, 1, 0);
+    if(bytes_read != lib_length){
+        std::cerr << "unable to properly read lib path" << "\n";
+        return false;
+    }
+
+    std::cout << "written lib path : " <<  written << "\n";
 
     
 
+    ////////////////////////////////////////////////////////////
+    /////////////////////// DLOPEN SECTION /////////////////////
+    ////////////////////////////////////////////////////////////
 
-     
+    current.rax = m_sys_data.m_dlopen_address;
+    current.rdi = allocated_address;
+    current.rsi = 0x2;
 
+    errno = 0;
+    unsigned long long phase2_rip_instruction = ptrace(PTRACE_PEEKDATA, m_pid_int, reinterpret_cast<void*>(current.rip), nullptr);
+    if(errno != 0){
+        std::cerr << "unable to get phase2 rip instruction";
+        return false;
+    }
 
+    unsigned long long phase2_altered_rip_instruction = (phase2_rip_instruction & 0xFFFFFFFFFF000000) | 0xCCD0FF;
+    if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(current.rip), reinterpret_cast<void*>(phase2_altered_rip_instruction)) < 0){
+        std::cerr << "unable to set phase2 new instruction" << "\n";
+        return false;
+    }
 
-
-    ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &used);
+    current.rsp = (current.rsp & 0xFFFFFFFFFFFFFFF0);
+    ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &current);
+    
     ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr);
     waitpid(m_pid_int, nullptr, 0);
-    std::cout << "target program triggered 0xCC\n";
+
+    std::cout << "\nJOB DONE, dlopen result isnt going to be checked for now.\n"
+                 "Runtime error are most likely due to the program being run on non libc based system.\n"
+                 "Will add glibc soon.\n";
 
 
-    ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &result);
-    std::cout << std::hex <<  result.rax << std::dec << "\n";
-
-
-
-
-
-
-
-
-
-
-
-    ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(backup.rip), reinterpret_cast<void*>(phase1_original_rip));
+    ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(backup.rip), reinterpret_cast<void*>(original_rip_instruction));
     ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &backup);
     ptrace(PTRACE_DETACH, m_pid_int, nullptr, nullptr);
+return true;
 
-    return true;
+
 }
 
 };
