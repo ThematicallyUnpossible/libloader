@@ -157,7 +157,9 @@ bool ptrace_load(){
     used.r10 = 0x22;
     used.r8 = static_cast<unsigned long long>(-1);
     used.r9 = 0;
-
+ 
+ 
+    errno = 0;
     unsigned long long phase1_original_rip = ptrace(PTRACE_PEEKDATA, m_pid_int, reinterpret_cast<void*>(used.rip), nullptr);
     if(errno != 0){
         std::cerr << "unable to get phase 1 rip instruction : " << strerror(errno) << "\n";
@@ -189,14 +191,14 @@ bool ptrace_load(){
     ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &result);
 
     unsigned long long allocated = result.rax;
-    std::cout << std::hex << allocated << "\n";
+    std::cout << "allocated region for string path at 0x" << std::hex << allocated <<  std::dec <<  "\n";
 
     struct iovec local_iov {
         .iov_base = (void*)m_lib_path.data(),
         .iov_len  = m_lib_path.size() + 1   
     };
     struct iovec remote_iov {
-        .iov_base = (void*)allocated,        // this is the remote mmap'd address
+        .iov_base = (void*)allocated,
         .iov_len  = m_lib_path.size() + 1
     };
 
@@ -205,6 +207,59 @@ bool ptrace_load(){
         std::cerr << "process_vm_writev failed." << "\n";
         return false;
     }
+
+    ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(backup.rip), reinterpret_cast<void*>(phase1_original_rip));
+    //reset it to make sure dl open have no issue
+
+    used = backup;
+
+    used.rax = m_sys_data.m_dlopen_address;
+    used.rdi = allocated;
+    used.rsi = 0x2;
+
+
+    errno = 0;
+    unsigned long long phase2_original_rip = ptrace(PTRACE_PEEKDATA, m_pid_int, reinterpret_cast<void*>(used.rip), nullptr);
+    if(errno != 0){
+        std::cerr << "unable to get phase 2 rip instruction : " << strerror(errno) << "\n";
+        return false;
+    }                   
+    std::cout << "current rip instruction : " << std::hex << phase2_original_rip << std::dec << "\n";
+
+    unsigned long long phase2_modified_rip = (phase2_original_rip & 0xFFFFFFFFFF000000) | 0xCCD0FF;
+    if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(used.rip), reinterpret_cast<void*>(phase2_modified_rip)) < 0){
+        std::cerr << "unable to modify phase 2 rip instruction" << "\n";
+        return false;
+    }
+    std::cout << "new rip instruction : " << std::hex << phase2_modified_rip << std::dec << "\n";
+
+    std::cout << "assumed dlopen address : 0x" << std::hex << m_sys_data.m_dlopen_address << std::dec << "\n"; 
+    used.rsp = used.rsp & 0xFFFFFFFFFFFFFFF0;
+    std::cout << "stack aligned : 0x" << std::hex << used.rsp << std::dec << "\n"; 
+
+
+    
+
+
+     
+
+
+
+
+    ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &used);
+    ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr);
+    waitpid(m_pid_int, nullptr, 0);
+    std::cout << "target program triggered 0xCC\n";
+
+
+    ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &result);
+    std::cout << std::hex <<  result.rax << std::dec << "\n";
+
+
+
+
+
+
 
 
 
