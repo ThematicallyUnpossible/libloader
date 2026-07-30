@@ -23,7 +23,7 @@ struct SysData{
     unsigned long long m_mmap_address{};
 };
 
-class System{
+class LoaderSystem{
 
 private:
     std::string m_pid_string{};
@@ -32,7 +32,7 @@ private:
     std::string m_lib_path{};
     SysData m_sys_data{};
 
-    System(std::string&& pid_string, int pid_int,  std::string&& program_name, std::string&& lib_path) : 
+    LoaderSystem(std::string&& pid_string, int pid_int,  std::string&& program_name, std::string&& lib_path) : 
     m_pid_string{std::move(pid_string)},
     m_pid_int{pid_int},
     m_program_name{std::move(program_name)},
@@ -47,7 +47,7 @@ private:
 
 public:
 
-static std::optional<System> initialize(std::string process_name, std::string path_to_lib){
+static std::optional<LoaderSystem> initialize(std::string process_name, std::string path_to_lib){
     std::filesystem::path lib_fs = path_to_lib;
     if(!std::filesystem::exists(path_to_lib)){
         std::cerr << "erorr\n";
@@ -62,7 +62,7 @@ static std::optional<System> initialize(std::string process_name, std::string pa
         std::string comm_string{};
         std::getline(entry_fstream, comm_string);
         if(comm_string.find(process_name) != std::string::npos){
-            return System{
+            return LoaderSystem{
                 std::move(proc_entry.path().filename().string()),
                 std::stoi(proc_entry.path().filename().string()),
                 std::move(process_name),
@@ -73,7 +73,7 @@ static std::optional<System> initialize(std::string process_name, std::string pa
     return std::nullopt;
 } 
 
-System() = delete;
+LoaderSystem() = delete;
 
 void print_pid() const{
     std::cout << m_pid_string << '\n';

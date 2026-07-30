@@ -62,7 +62,7 @@ int main(int argc, const char* argv[]){
         return 1;
     }
 
-    std::optional<System> syso_optional = System::initialize(argv[1], argv[2]);
+    std::optional<LoaderSystem> syso_optional = LoaderSystem::initialize(argv[1], argv[2]);
     if(!syso_optional){
         std::cerr << "Error : failed to create system object\n";
         return 1;
