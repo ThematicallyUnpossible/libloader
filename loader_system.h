@@ -138,7 +138,10 @@ bool ptrace_load(){
     /////////////////////// MMAP SECTION ///////////////////////
     ////////////////////////////////////////////////////////////
 
-    ptrace(PTRACE_ATTACH, m_pid_int, nullptr, nullptr);
+    if(ptrace(PTRACE_ATTACH, m_pid_int, nullptr, nullptr) < 0 ){
+        std::cerr<< "unable to attach ptrace" <<  "\n";
+        return false;
+    }
     waitpid(m_pid_int, nullptr, 0);
 
     struct user_regs_struct backup, current, result;
@@ -176,7 +179,10 @@ bool ptrace_load(){
         return false;
     }
 
-    ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr);
+    if(ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr) < 0){
+        std::cerr << "unable to lift phase1 breakpoint off target" << "\n";
+        return false;
+    }
     waitpid(m_pid_int, nullptr, 0);
 
     if(ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &result) < 0){
@@ -250,18 +256,31 @@ bool ptrace_load(){
     }
 
     current.rsp = (current.rsp & 0xFFFFFFFFFFFFFFF0);
-    ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &current);
+    if(ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &current) < 0){
+        std::cerr << "unable to set phase2 register"  << "\n";
+        return false;
+    }
     
-    ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr);
+    if(ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr) <0 ){
+        std::cerr << "unable to lift phase2 breakpoint off target" << "\n";
+        return false;
+    }
     waitpid(m_pid_int, nullptr, 0);
 
     std::cout << "\nJOB DONE, dlopen result isnt going to be checked for now.\n"
                  "Runtime error are most likely due to the program being run on non libc based system.\n"
-                 "Will add glibc soon.\n";
+                 "Will add glibc support  soon.\n"
+                 "CLEANUP MECHANISM ASSUME GETREGS ON FIRST PHASE SUCCEED\n";
 
 
-    ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(backup.rip), reinterpret_cast<void*>(original_rip_instruction));
-    ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &backup);
+    if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(backup.rip), reinterpret_cast<void*>(original_rip_instruction)) < 0){
+        std::cerr <<  "unable to store original rip instruction inside backup register." << "\n";
+        return false;
+    }
+    if(ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &backup) < 0){
+        std::cerr << "unable to set backup registers" << "\n";
+        return false;
+    }
     ptrace(PTRACE_DETACH, m_pid_int, nullptr, nullptr);
 return true;
 
