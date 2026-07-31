@@ -5,5 +5,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED)
 set(EXPORT_COMPILE_COMMANDS ON)
 add_executable(libloader main.cpp
     loader_system.h
+    loader_system.cpp
 )
 
