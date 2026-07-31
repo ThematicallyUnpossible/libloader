@@ -1,9 +1,7 @@
 #ifndef UNIFIED
 #define UNIFIED
 #include <dlfcn.h>
-#include <filesystem>
 #include <ios>
-#include <optional>
 #include <string>
 #include <iostream>
 #include <fstream>
@@ -12,6 +10,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sys/uio.h>
+#include <optional>
+#include <vector>
+#include <filesystem>
 
 struct SysData{
     unsigned long long m_program_base{};
@@ -20,6 +21,7 @@ struct SysData{
     unsigned long long m_dlopen_address{};
     unsigned long long m_mmap_address{};
 };
+
 
 class LoaderSystem{
 
@@ -30,14 +32,16 @@ private:
     std::string m_lib_path{};
     SysData m_sys_data{};
 
-    LoaderSystem(std::string&& pid_string, int pid_int,  std::string&& program_name, std::string&& lib_path) : 
+    explicit LoaderSystem(std::string&& pid_string, int pid_int,  std::string&& program_name, std::string&& lib_path) : 
     m_pid_string{std::move(pid_string)},
     m_pid_int{pid_int},
     m_program_name{std::move(program_name)},
     m_lib_path{std::move(lib_path)}
     {
         //nothing here
-    }
+    } 
+
+    void ptrace_load_clean(bool overwritten_data, unsigned long long original_rip_instruction, user_regs_struct& backup);
 
     void clear_sys_data(){
         m_sys_data = SysData{};
@@ -78,6 +82,8 @@ void print_pid() const;
 bool fetch_data();
 
 bool ptrace_load();
+
+
 };
 
 
