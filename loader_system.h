@@ -11,7 +11,6 @@
 #include <unistd.h>
 #include <sys/uio.h>
 #include <optional>
-#include <vector>
 #include <filesystem>
 
 struct SysData{
@@ -22,6 +21,13 @@ struct SysData{
     unsigned long long m_mmap_address{};
 };
 
+struct Session{
+    bool m_attached{};
+    bool m_phase1_get_register{};
+    bool m_phase1_set_register{};
+    bool m_phase2_get_register{};
+    bool m_phase2_set_register{};
+};
 
 class LoaderSystem{
 
