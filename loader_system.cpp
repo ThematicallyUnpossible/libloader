@@ -1,5 +1,6 @@
 #include "loader_system.h"
 
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <dlfcn.h>
@@ -13,12 +14,7 @@
 #include <unistd.h>
 #include <sys/uio.h>
 
-
-void LoaderSystem::print_pid() const{
-    std::cout << m_pid_string << '\n';
-}
-
-bool LoaderSystem::fetch_data(){
+bool Session::LoaderSystem::fetch_data(IErrorReport& report_interface){
     std::ifstream target_maps_fstream("/proc/"+m_pid_string+"/maps");
     if(!target_maps_fstream){
         return false;
@@ -32,8 +28,8 @@ bool LoaderSystem::fetch_data(){
         std::string current_page{};
     
         while(getline(stream, current_page)){
-            if(current_page.find(target) != std::string::npos && current_page.find(target) != std::string::npos){
-                std::size_t dash_iter = current_page.find(' ');
+            if(current_page.find(target) != std::string::npos && current_page.find(permission) != std::string::npos){
+                std::size_t dash_iter = current_page.find('-');
                 std::string memory_string{current_page.substr(0, dash_iter)};
                 return std::stoull(memory_string, nullptr, 16);
             }
@@ -68,7 +64,7 @@ bool LoaderSystem::fetch_data(){
     return true;
     }
 
-bool LoaderSystem::ptrace_load(){
+bool Session::LoaderSystem::ptrace_load(IErrorReport& report_interface){
 
     ////////////////////////////////////////////////////////////
     /////////////////////// MMAP SECTION ///////////////////////
@@ -76,58 +72,60 @@ bool LoaderSystem::ptrace_load(){
 
     if(ptrace(PTRACE_ATTACH, m_pid_int, nullptr, nullptr) < 0 ){
         std::cerr<< "unable to attach ptrace" <<  "\n";
+        report_interface.raise_error(ErrorFlag::ATTACH);
         return false;
     }
     waitpid(m_pid_int, nullptr, 0);
 
-    struct user_regs_struct backup, current, result;
+    struct user_regs_struct backup, used, result;
     if(ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &backup) < 0){
         std::cerr << "unable to get registers #1" << "\n";
+        report_interface.raise_error(ErrorFlag::GETREG);
         return false;
     }
 
-    current = backup;
+    used = backup;
 
-    current.rax = 0x9;
-    current.rdi = 0;
-    current.rsi = 0x1000;
-    current.rdx = 0x7;
-    current.r10 = 0x22;
-    current.r8 = static_cast<unsigned long long>(-1);
-    current.r9 = 0;
+    used.rax = 0x9;
+    used.rdi = 0;
+    used.rsi = 0x1000;
+    used.rdx = 0x7;
+    used.r10 = 0x22;
+    used.r8 = static_cast<unsigned long long>(-1);
+    used.r9 = 0;
  
-    unsigned long long phase1_rip_address{current.rip};
+    unsigned long long phase1_rip_address{used.rip};
     errno = 0;
     unsigned long long original_rip_instruction = ptrace(PTRACE_PEEKDATA, m_pid_int, reinterpret_cast<void*>(phase1_rip_address), nullptr );
     if(errno != 0){
         std::cerr << "unable to get phase1 rip instruction" << "\n";\
-        ptrace_load_clean(false, original_rip_instruction, backup);
+        report_interface.raise_error(ErrorFlag::READRIP);
         return false;
     }
 
     unsigned long long phase1_altered_rip_instruction = (original_rip_instruction & 0xFFFFFFFFFF000000) | 0xCC050F;
     if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(phase1_rip_address), reinterpret_cast<void*>(phase1_altered_rip_instruction)) < 0){
         std::cerr << "unable to set phase1 new rip instruction" << "\n";
-        ptrace_load_clean(true, original_rip_instruction, backup);
+        report_interface.raise_error(ErrorFlag::SETRIP);
         return false;
     }
 
-    if(ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &current) < 0){
+    if(ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &used) < 0){
         std::cerr << "unable to set phase1 new registers" << "\n";
-        ptrace_load_clean(true, original_rip_instruction, backup);
+        report_interface.raise_error(ErrorFlag::SETREG);
         return false;
     }
 
     if(ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr) < 0){
         std::cerr << "unable to lift phase1 breakpoint off target" << "\n";
-        ptrace_load_clean(true, original_rip_instruction, backup);
+        report_interface.raise_error(ErrorFlag::CONT);
         return false;
     }
     waitpid(m_pid_int, nullptr, 0);
 
     if(ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &result) < 0){
         std::cerr << "unable to get registers for result" << "\n";
-        ptrace_load_clean(true, original_rip_instruction, backup);
+        report_interface.raise_error(ErrorFlag::GETREG);
         return false;
     }
 
@@ -152,7 +150,6 @@ bool LoaderSystem::ptrace_load(){
     ssize_t bytes_written = process_vm_writev(m_pid_int, &local_write_region, 1, &remote_write_region, 1, 0);
     if(bytes_written != lib_length){
         std::cerr << "unable to properly write lib path" << "\n";
-        ptrace_load_clean(true, original_rip_instruction, backup);
         return false;
     }
 
@@ -169,7 +166,6 @@ bool LoaderSystem::ptrace_load(){
     ssize_t bytes_read = process_vm_readv(m_pid_int, &local_read_region, 1, &remote_read_region, 1, 0);
     if(bytes_read != lib_length){
         std::cerr << "unable to properly read lib path" << "\n";
-        ptrace_load_clean(true, original_rip_instruction, backup);
         return false;
     }
 
@@ -179,59 +175,53 @@ bool LoaderSystem::ptrace_load(){
     /////////////////////// DLOPEN SECTION /////////////////////
     ////////////////////////////////////////////////////////////
 
-    current.rax = m_sys_data.m_dlopen_address;
-    current.rdi = allocated_address;
-    current.rsi = 0x2;
 
-    errno = 0;
-    unsigned long long phase2_rip_instruction = ptrace(PTRACE_PEEKDATA, m_pid_int, reinterpret_cast<void*>(current.rip), nullptr);
-    if(errno != 0){
-        std::cerr << "unable to get phase2 rip instruction";
-        ptrace_load_clean(true, original_rip_instruction, backup);
-        return false;
-    }
+    used.rax = m_sys_data.m_dlopen_address;
+    used.rdi = allocated_address;
+    used.rsi = 0x2;  
+    used.rsp = (used.rsp & 0xFFFFFFFFFFFFFFF0);
 
-    unsigned long long phase2_altered_rip_instruction = (phase2_rip_instruction & 0xFFFFFFFFFF000000) | 0xCCD0FF;
-    if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(current.rip), reinterpret_cast<void*>(phase2_altered_rip_instruction)) < 0){
-        std::cerr << "unable to set phase2 new instruction" << "\n";
-        ptrace_load_clean(true, original_rip_instruction, backup);
+
+
+    unsigned long long phase2_instruction = 0xCCD0FF;
+    if (ptrace(PTRACE_POKEDATA, m_pid_int,reinterpret_cast<void*>(used.rip), reinterpret_cast<void*>(phase2_instruction)) < 0) {
+        std::cerr << "unable to set phase2 new instruction\n";
+        report_interface.raise_error(ErrorFlag::SETRIP);
         return false;
     }
 
-    current.rsp = (current.rsp & 0xFFFFFFFFFFFFFFF0);
-    if(ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &current) < 0){
-        std::cerr << "unable to set phase2 register"  << "\n";
-        ptrace_load_clean(true, original_rip_instruction, backup);
+    if (ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &used) < 0) {
+        std::cerr << "unable to set phase2 register\n";
+        report_interface.raise_error(ErrorFlag::SETREG);
         return false;
     }
-    
-    if(ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr) <0 ){
-        std::cerr << "unable to lift phase2 breakpoint off target" << "\n";
-        ptrace_load_clean(true, original_rip_instruction, backup);
+
+    if (ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr) < 0) {
+        std::cerr << "unable to lift phase2 breakpoint off target\n";
+        report_interface.raise_error(ErrorFlag::CONT);
         return false;
     }
+
     waitpid(m_pid_int, nullptr, 0);
+
 
     std::cout << "\nJOB DONE, dlopen result isnt going to be checked for now.\n"
                  "Runtime error are most likely due to the program being run on non libc based system.\n"
                  "Will add glibc support  soon.\n";
 
-    ptrace_load_clean(true, original_rip_instruction, backup);
-return true;
-
-}
-
-void LoaderSystem::ptrace_load_clean(bool overwritten_data, unsigned long long original_rip_instruction, struct user_regs_struct& backup){
-    if(overwritten_data){
-        if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(backup.rip), reinterpret_cast<void*>(original_rip_instruction)) < 0){
-            std::cerr <<  "unable to store original rip instruction inside backup register." << "\n";
-            return;
-        }
+    if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(backup.rip), reinterpret_cast<void*>(original_rip_instruction)) < 0){
+        std::cerr <<  "unable to store original rip instruction inside backup register." << "\n";
+        return false;        
     }
     
     if(ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &backup) < 0){
         std::cerr << "unable to set backup registers" << "\n";
-        return;
+        return false;
     }
+
     ptrace(PTRACE_DETACH, m_pid_int, nullptr, nullptr);
+return true;
+
 }
+
+

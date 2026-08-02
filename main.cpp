@@ -2,7 +2,6 @@
 #include <limits>
 #include <type_traits>
 #include "loader_system.h"
-
 void refresh_cin(){
     std::cin.clear();
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
@@ -39,14 +38,13 @@ int main(int argc, const char* argv[]){
         return 1;
     }
 
-    std::optional<LoaderSystem> loader = LoaderSystem::initialize(argv[1], argv[2]);
-    if(!loader){
-        std::cerr << "Error : failed to create system object\n";
+    std::optional<Session>  main_session = Session::create_protected_environment(argv[1], argv[2]);
+    if(!main_session){
+        std::cerr << "Unable to create session,  double check arguments.\n";
         return 1;
     }
-
-    loader.value().fetch_data();
-    loader.value().ptrace_load();
+    main_session->safe_fetch_data();
+    main_session->safe_ptrace_load();
 }
     
 
