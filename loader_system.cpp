@@ -13,8 +13,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sys/uio.h>
+#include <algorithm>
 
-bool Session::LoaderSystem::fetch_data(IErrorReport& report_interface){
+bool Session::LoaderSystem::fetch_data(ICheckpointReport& report_interface){
     std::ifstream target_maps_fstream("/proc/"+m_pid_string+"/maps");
     if(!target_maps_fstream){
         return false;
@@ -64,7 +65,7 @@ bool Session::LoaderSystem::fetch_data(IErrorReport& report_interface){
     return true;
     }
 
-bool Session::LoaderSystem::ptrace_load(IErrorReport& report_interface){
+bool Session::LoaderSystem::ptrace_load(ICheckpointReport& report_interface){
 
     ////////////////////////////////////////////////////////////
     /////////////////////// MMAP SECTION ///////////////////////
@@ -72,17 +73,17 @@ bool Session::LoaderSystem::ptrace_load(IErrorReport& report_interface){
 
     if(ptrace(PTRACE_ATTACH, m_pid_int, nullptr, nullptr) < 0 ){
         std::cerr<< "unable to attach ptrace" <<  "\n";
-        report_interface.raise_error(ErrorFlag::ATTACH);
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::ATTACH);
     waitpid(m_pid_int, nullptr, 0);
 
     struct user_regs_struct backup, used, result;
     if(ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &backup) < 0){
         std::cerr << "unable to get registers #1" << "\n";
-        report_interface.raise_error(ErrorFlag::GETREG);
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::GETREG);
 
     used = backup;
 
@@ -99,35 +100,38 @@ bool Session::LoaderSystem::ptrace_load(IErrorReport& report_interface){
     unsigned long long original_rip_instruction = ptrace(PTRACE_PEEKDATA, m_pid_int, reinterpret_cast<void*>(phase1_rip_address), nullptr );
     if(errno != 0){
         std::cerr << "unable to get phase1 rip instruction" << "\n";\
-        report_interface.raise_error(ErrorFlag::READRIP);
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::GETREG);
 
     unsigned long long phase1_altered_rip_instruction = (original_rip_instruction & 0xFFFFFFFFFF000000) | 0xCC050F;
     if(ptrace(PTRACE_POKEDATA, m_pid_int, reinterpret_cast<void*>(phase1_rip_address), reinterpret_cast<void*>(phase1_altered_rip_instruction)) < 0){
         std::cerr << "unable to set phase1 new rip instruction" << "\n";
-        report_interface.raise_error(ErrorFlag::SETRIP);
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::SETRIP);
+
 
     if(ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &used) < 0){
         std::cerr << "unable to set phase1 new registers" << "\n";
-        report_interface.raise_error(ErrorFlag::SETREG);
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::SETREG);
+
 
     if(ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr) < 0){
         std::cerr << "unable to lift phase1 breakpoint off target" << "\n";
-        report_interface.raise_error(ErrorFlag::CONT);
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::CONT);
     waitpid(m_pid_int, nullptr, 0);
 
     if(ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &result) < 0){
         std::cerr << "unable to get registers for result" << "\n";
-        report_interface.raise_error(ErrorFlag::GETREG);
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::GETREG);
+    
 
     unsigned long long allocated_address = result.rax;
     std::cout << "syscall mmap returned : 0x" << std::hex << allocated_address << std::dec << "\n";
@@ -152,6 +156,8 @@ bool Session::LoaderSystem::ptrace_load(IErrorReport& report_interface){
         std::cerr << "unable to properly write lib path" << "\n";
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::WRITEV);
+
 
     char written[lib_length];
     struct iovec local_read_region{
@@ -168,6 +174,8 @@ bool Session::LoaderSystem::ptrace_load(IErrorReport& report_interface){
         std::cerr << "unable to properly read lib path" << "\n";
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::READV);
+
 
     std::cout << "written lib path : " <<  written << "\n";
 
@@ -181,26 +189,25 @@ bool Session::LoaderSystem::ptrace_load(IErrorReport& report_interface){
     used.rsi = 0x2;  
     used.rsp = (used.rsp & 0xFFFFFFFFFFFFFFF0);
 
-
-
     unsigned long long phase2_instruction = 0xCCD0FF;
     if (ptrace(PTRACE_POKEDATA, m_pid_int,reinterpret_cast<void*>(used.rip), reinterpret_cast<void*>(phase2_instruction)) < 0) {
         std::cerr << "unable to set phase2 new instruction\n";
-        report_interface.raise_error(ErrorFlag::SETRIP);
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::READRIP);
+
 
     if (ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &used) < 0) {
         std::cerr << "unable to set phase2 register\n";
-        report_interface.raise_error(ErrorFlag::SETREG);
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::SETREG);
 
     if (ptrace(PTRACE_CONT, m_pid_int, nullptr, nullptr) < 0) {
         std::cerr << "unable to lift phase2 breakpoint off target\n";
-        report_interface.raise_error(ErrorFlag::CONT);
         return false;
     }
+    report_interface.raise_checkpoint(Checkpoint::CONT);
 
     waitpid(m_pid_int, nullptr, 0);
 
@@ -224,4 +231,22 @@ return true;
 
 }
 
+void Session::do_cleanup(){
+    
+    bool require_patching{false};
 
+    auto readrip_occurances = std::count(m_checkpoint_container.begin(), m_checkpoint_container.end(), Checkpoint::READRIP);
+    auto setrip_occurances = std::count(m_checkpoint_container.begin(), m_checkpoint_container.end(), Checkpoint::SETRIP);
+    auto getreg_occurances = std::count(m_checkpoint_container.begin(), m_checkpoint_container.end(), Checkpoint::GETREG);
+    auto setreg_occurances = std::count(m_checkpoint_container.begin(), m_checkpoint_container.end(), Checkpoint::SETREG);
+
+    if(readrip_occurances == 2 || setrip_occurances > 1 || getreg_occurances == 2 || setreg_occurances > 0){
+        require_patching = true;
+    }
+    
+    if(require_patching){
+        //cleanup here
+    }
+
+    return;
+}

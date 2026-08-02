@@ -23,7 +23,7 @@ struct SysData{
     unsigned long long m_mmap_address{};
 };
 
-enum class ErrorFlag : std::size_t {
+enum class Checkpoint : std::size_t {
     ATTACH,
     GETREG,
     SETREG,
@@ -35,13 +35,13 @@ enum class ErrorFlag : std::size_t {
     DETACH,
 };
 
-class IErrorReport{
+class ICheckpointReport{
 public:
-    virtual void raise_error(ErrorFlag flag) = 0;
-    virtual ~IErrorReport() = default;
+    virtual void raise_checkpoint(Checkpoint flag) = 0;
+    virtual ~ICheckpointReport() = default;
 };
 
-class Session : IErrorReport{
+class Session : ICheckpointReport{
 private:
     class LoaderSystem{
     private:
@@ -64,17 +64,17 @@ private:
             {}
         friend Session;
         LoaderSystem() = delete;
-        bool fetch_data(IErrorReport& report_interface);
-        bool ptrace_load(IErrorReport& report_interface);
+        bool fetch_data(ICheckpointReport& report_interface);
+        bool ptrace_load(ICheckpointReport& report_interface);
     };
 
     std::unique_ptr<LoaderSystem> m_protected_system;
-    std::vector<ErrorFlag> m_error_container{};
+    std::vector<Checkpoint> m_checkpoint_container{};
 
 public:
 
-    void raise_error(ErrorFlag flag){
-        m_error_container.push_back(flag);
+    void raise_checkpoint(Checkpoint flag){
+        m_checkpoint_container.push_back(flag);
     }
 
     static std::optional<Session> create_protected_environment(std::string process_name, std::string path_to_lib){
@@ -114,9 +114,9 @@ public:
         m_protected_system->fetch_data(*this);
     }
     void safe_ptrace_load(){
-        std::cout << "target dlopen address 0x " << m_protected_system->m_sys_data.m_dlopen_address << "\n";
         m_protected_system->ptrace_load(*this);
     }
+    void do_cleanup();
 
 };
 

@@ -45,6 +45,7 @@ int main(int argc, const char* argv[]){
     }
     main_session->safe_fetch_data();
     main_session->safe_ptrace_load();
+    main_session->do_cleanup();
 }
     
 
