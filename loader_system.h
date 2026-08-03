@@ -21,6 +21,15 @@ struct SysData{
     unsigned long long m_custom_base{};
     unsigned long long m_dlopen_address{};
     unsigned long long m_mmap_address{};
+
+    unsigned long long m_original_rip_instruction
+    ;
+};
+
+struct Registers{
+    struct user_regs_struct m_backup{};
+    struct user_regs_struct m_used{};
+    struct user_regs_struct m_result{};
 };
 
 enum class Checkpoint : std::size_t {
@@ -35,13 +44,13 @@ enum class Checkpoint : std::size_t {
     DETACH,
 };
 
-class ICheckpointReport{
+class SessionInterfaces{
 public:
     virtual void raise_checkpoint(Checkpoint flag) = 0;
-    virtual ~ICheckpointReport() = default;
+    virtual ~SessionInterfaces() = default;
 };
 
-class Session : ICheckpointReport{
+class Session : SessionInterfaces{
 private:
     class LoaderSystem{
     private:
@@ -49,11 +58,10 @@ private:
         int m_pid_int{};
         std::string m_program_name{};
         std::string m_lib_path{};
-        SysData m_sys_data{};
 
-        void clear_sys_data(){
-            m_sys_data = SysData{};
-        }
+        SysData m_sys_data{};
+        Registers m_reg_data{};
+  
 
     public:
         explicit LoaderSystem(std::string&& pid_string, int pid_int,  std::string&& program_name, std::string&& lib_path) : 
@@ -64,8 +72,8 @@ private:
             {}
         friend Session;
         LoaderSystem() = delete;
-        bool fetch_data(ICheckpointReport& report_interface);
-        bool ptrace_load(ICheckpointReport& report_interface);
+        bool fetch_data(SessionInterfaces& report_interface);
+        bool ptrace_load(SessionInterfaces& report_interface);
     };
 
     std::unique_ptr<LoaderSystem> m_protected_system;
@@ -116,7 +124,7 @@ public:
     void safe_ptrace_load(){
         m_protected_system->ptrace_load(*this);
     }
-    void do_cleanup();
+    bool do_cleanup();
 
 };
 
