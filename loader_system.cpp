@@ -19,12 +19,12 @@ bool Session::do_cleanup(){
     
     bool require_patching{false};
 
-    auto readrip_occurances = std::count(m_checkpoint_container.begin(), m_checkpoint_container.end(), Checkpoint::READRIP);
+    auto readrip_occurances = std::count(m_checkpoint_container.begin(), m_checkpoint_container.end(), Checkpoint::GETRIP);
     auto setrip_occurances = std::count(m_checkpoint_container.begin(), m_checkpoint_container.end(), Checkpoint::SETRIP);
     auto getreg_occurances = std::count(m_checkpoint_container.begin(), m_checkpoint_container.end(), Checkpoint::GETREG);
     auto setreg_occurances = std::count(m_checkpoint_container.begin(), m_checkpoint_container.end(), Checkpoint::SETREG);
 
-    if(readrip_occurances == 2 || setrip_occurances > 0 || getreg_occurances == 2 || setreg_occurances > 0){
+    if(readrip_occurances > 1 || setrip_occurances > 0 || getreg_occurances > 1 || setreg_occurances > 0){
         require_patching = true;
     }
     
@@ -73,11 +73,13 @@ bool Session::LoaderSystem::fetch_data(SessionInterfaces& report_interface){
     std::ifstream self_fstream("/proc/"+std::to_string(getpid())+"/maps");
     unsigned long long self_libc_base  = dlsym_lite_base(self_fstream, "libc.so", "r");
 
+
     void* self_mmap = dlsym(RTLD_DEFAULT, "mmap");
     if(!self_mmap){
         std::cerr << "couldnt find local mmap.";
         return false;
     }
+
     unsigned long long mmap_offset = (reinterpret_cast<unsigned long long>(self_mmap)) - self_libc_base;
 
     void* self_dlopen = dlsym(RTLD_DEFAULT, "dlopen");
@@ -210,18 +212,17 @@ bool Session::LoaderSystem::ptrace_load(SessionInterfaces& session_interface){
     /////////////////////// DLOPEN SECTION /////////////////////
     ////////////////////////////////////////////////////////////
 
-
     m_reg_data.m_used.rax = m_sys_data.m_dlopen_address;
     m_reg_data.m_used.rdi = allocated_address;
     m_reg_data.m_used.rsi = 0x2;  
     m_reg_data.m_used.rsp = (m_reg_data.m_used.rsp & 0xFFFFFFFFFFFFFFF0);
 
-    unsigned long long phase2_instruction = 0xCCD0FF;
+    unsigned long long phase2_instruction = (m_reg_data.m_used.rip & 0xFFFFFFFFFF000000) | 0xCCD0FF;
     if (ptrace(PTRACE_POKEDATA, m_pid_int,reinterpret_cast<void*>(m_reg_data.m_used.rip), reinterpret_cast<void*>(phase2_instruction)) < 0) {
         std::cerr << "unable to set phase2 new instruction\n";
         return false;
     }
-    session_interface.raise_checkpoint(Checkpoint::READRIP);
+    session_interface.raise_checkpoint(Checkpoint::SETRIP);
 
 
     if (ptrace(PTRACE_SETREGS, m_pid_int, nullptr, &m_reg_data.m_used) < 0) {
@@ -238,10 +239,21 @@ bool Session::LoaderSystem::ptrace_load(SessionInterfaces& session_interface){
 
     waitpid(m_pid_int, nullptr, 0);
 
+    if(ptrace(PTRACE_GETREGS, m_pid_int, nullptr, &m_reg_data.m_result) < 0){
+        std::cerr << "unable to get registers for result" << "\n";
+        return false;
+    }
+    session_interface.raise_checkpoint(Checkpoint::GETREG);
+    
+    unsigned long long raw_dlopen_return = m_reg_data.m_result.rax;
 
-    std::cout << "\nJOB DONE, dlopen result isnt going to be checked for now.\n"
-                 "Runtime error are most likely due to the program being run on non libc based system.\n"
-                 "Will add glibc support  soon.\n";
+    void* handle_dlopen_return = reinterpret_cast<void*>(raw_dlopen_return);
+    if(!handle_dlopen_return){
+        std::cerr << "nonsys call dlopen failed.";
+        return false;
+    }
+
+    std::cout << "\nJOB DONE\n";
 
 return true;
 

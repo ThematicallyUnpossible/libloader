@@ -36,7 +36,7 @@ enum class Checkpoint : std::size_t {
     ATTACH,
     GETREG,
     SETREG,
-    READRIP,
+    GETRIP,
     SETRIP,
     READV,
     WRITEV,
