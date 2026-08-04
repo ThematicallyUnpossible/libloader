@@ -10,10 +10,14 @@
 #include <fstream>
 #include <sys/ptrace.h>
 #include <sys/user.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/uio.h>
 #include <algorithm>
+
+
 
 bool Session::do_cleanup(){
     
@@ -43,7 +47,7 @@ bool Session::do_cleanup(){
     return true;
 }
 
-bool Session::LoaderSystem::fetch_data(SessionInterfaces& report_interface){
+bool Session::LoaderSystem::fetch_data(SessionInterfaces& session_interface){
     std::ifstream target_maps_fstream("/proc/"+m_pid_string+"/maps");
     if(!target_maps_fstream){
         return false;
@@ -94,6 +98,60 @@ bool Session::LoaderSystem::fetch_data(SessionInterfaces& report_interface){
 
     return true;
     }
+
+
+bool Session::LoaderSystem::trigger_hook(SessionInterfaces& session_interface, std::string& lib_name){
+    
+
+    std::string path_to_maps = "/proc/"  +  m_pid_string  +  "/maps";
+    std::fstream maps_fstream(path_to_maps);
+    if(!maps_fstream){
+        std::cerr << "invalid maps path" <<  "\n";
+        return false;
+    }
+    std::string current_page;
+    while(getline(maps_fstream,  current_page)){
+        if(current_page.find(lib_name) != std::string::npos){
+            std::size_t dash_index = current_page.find('-');
+            std::string base_addr_string =   current_page.substr(0, dash_index);
+            m_sys_data.m_custom_base = (std::stoull(base_addr_string,  nullptr, 16));
+            break;
+        }
+    }
+    
+    //1119 offset to hook fcn
+    //2377 offset to original fcn
+
+    char bytes_to_write[14];
+    bytes_to_write[0] = 0xFF;
+    bytes_to_write[1] = 0x25;
+    bytes_to_write[2] = 0x00;
+    bytes_to_write[3] = 0x00;
+    bytes_to_write[4] = 0x00;
+    bytes_to_write[5] = 0x00;
+
+
+    unsigned long long hook_address = m_sys_data.m_custom_base + 0x1119;
+
+
+    memcpy(&bytes_to_write[6], &hook_address, 8);
+    std::string path_to_memory = "/proc/"+m_pid_string+"/mem";
+    int fd  = open(path_to_memory.c_str(), O_WRONLY);
+    if(fd < 0){
+        std::cerr << "failed to open file  descriptor of target mem" << "\n";
+        return false;
+    }
+
+    unsigned long long original_function = m_sys_data.m_program_base + 0x2377;
+
+    lseek(fd, original_function, SEEK_SET);
+    write(fd, &bytes_to_write, 14);
+    
+    
+
+    return true;
+}
+
 
 bool Session::LoaderSystem::ptrace_load(SessionInterfaces& session_interface){
 

@@ -72,8 +72,9 @@ private:
             {}
         friend Session;
         LoaderSystem() = delete;
-        bool fetch_data(SessionInterfaces& report_interface);
-        bool ptrace_load(SessionInterfaces& report_interface);
+        bool fetch_data(SessionInterfaces& session_interface);
+        bool ptrace_load(SessionInterfaces& session_interface);
+        bool trigger_hook(SessionInterfaces& session_interface, std::string& lib_name);
     };
 
     std::unique_ptr<LoaderSystem> m_protected_system;
@@ -123,6 +124,9 @@ public:
     }
     void safe_ptrace_load(){
         m_protected_system->ptrace_load(*this);
+    }
+    void safe_trigger_hook(std::string lib_name){
+        m_protected_system->trigger_hook(*this, lib_name);
     }
     bool do_cleanup();
 
