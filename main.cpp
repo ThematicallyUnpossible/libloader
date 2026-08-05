@@ -3,22 +3,11 @@
 #include <limits>
 #include <type_traits>
 #include "loader_system.h"
+
 void refresh_cin(){
     std::cin.clear();
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 }
-
-enum class Operation :  std::size_t{
-    PTRACE_LOAD,
-    HOOK_TRIGGER,
-};
-
-struct ChoiceContainer{
-    std::string m_operation_string{};
-    Operation m_operation_enum{};
-};
-
-
 
 template<typename T>
     requires std::is_arithmetic_v<T>
@@ -43,6 +32,16 @@ template<typename T>
     return;
 }
 
+enum class Operation :  std::size_t{
+    PTRACE_LOAD,
+    HOOK_TRIGGER,
+};
+
+struct ChoiceContainer{
+    std::string m_operation_string{};
+    Operation m_operation_enum{};
+};
+
 ChoiceContainer get_choice(){
     const std::vector<ChoiceContainer> choice_list{
         {"Load with ptrace", Operation::PTRACE_LOAD},
@@ -65,7 +64,6 @@ ChoiceContainer get_choice(){
     }
 }
 
-
 int main(int argc, const char* argv[]){
 
     if(argc != 3){
@@ -78,14 +76,20 @@ int main(int argc, const char* argv[]){
         std::cerr << "Unable to create session,  double check arguments.\n";
         return 1;
     }
-    auto operation = get_choice();
-    if(operation.m_operation_enum == Operation::PTRACE_LOAD){
-        main_session->safe_fetch_data();
-        main_session->safe_ptrace_load();
-        main_session->do_cleanup();
+
+    while(true){
+        auto operation = get_choice();
+        if(operation.m_operation_enum == Operation::PTRACE_LOAD){
+            main_session->safe_fetch_data();
+            main_session->safe_ptrace_load();
+            main_session->do_cleanup();
+            continue;
+        }
+        else if(operation.m_operation_enum == Operation::HOOK_TRIGGER){
+            main_session->safe_trigger_hook("libfcnhook.so");
+            continue;
+        }
     }
-    
-    main_session->safe_trigger_hook("libfcnhook.so");
 }
     
 
