@@ -1,5 +1,5 @@
 # libloader
 
     todo  :
-        -   cleanup on failure
+        -   ELF parser?
         
