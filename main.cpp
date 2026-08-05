@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <iostream>
 #include <limits>
 #include <type_traits>
@@ -6,6 +7,18 @@ void refresh_cin(){
     std::cin.clear();
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 }
+
+enum class Operation :  std::size_t{
+    PTRACE_LOAD,
+    HOOK_TRIGGER,
+};
+
+struct ChoiceContainer{
+    std::string m_operation_string{};
+    Operation m_operation_enum{};
+};
+
+
 
 template<typename T>
     requires std::is_arithmetic_v<T>
@@ -30,6 +43,28 @@ template<typename T>
     return;
 }
 
+ChoiceContainer get_choice(){
+    const std::vector<ChoiceContainer> choice_list{
+        {"Load with ptrace", Operation::PTRACE_LOAD},
+        {"Trigger hook function", Operation::HOOK_TRIGGER}
+    };
+    auto print_list = [&choice_list](){
+        for(const auto& obj : choice_list){
+            std::size_t index = static_cast<std::size_t>(obj.m_operation_enum);
+            std::cout << index << ". " << choice_list[index].m_operation_string << "\n";
+        }
+    };
+    const std::size_t choice_min{0};
+    const std::size_t choice_max{(choice_list.size()-1)};
+    
+    print_list();
+    while(true){
+        std::size_t choice{};
+        prompt_mutate<std::size_t>("", "Type your operation choice: ", choice, choice_min, choice_max);
+        return choice_list[choice];
+    }
+}
+
 
 int main(int argc, const char* argv[]){
 
@@ -43,10 +78,14 @@ int main(int argc, const char* argv[]){
         std::cerr << "Unable to create session,  double check arguments.\n";
         return 1;
     }
-    main_session->safe_fetch_data();
-    main_session->safe_ptrace_load();
+    auto operation = get_choice();
+    if(operation.m_operation_enum == Operation::PTRACE_LOAD){
+        main_session->safe_fetch_data();
+        main_session->safe_ptrace_load();
+        main_session->do_cleanup();
+    }
+    
     main_session->safe_trigger_hook("libfcnhook.so");
-    main_session->do_cleanup();
 }
     
 
