@@ -14,6 +14,7 @@
 #include <optional>
 #include <filesystem>
 #include <vector>
+#include "utility.h"
 
 struct SysData{
     unsigned long long m_program_base{};
@@ -22,8 +23,10 @@ struct SysData{
     unsigned long long m_dlopen_address{};
     unsigned long long m_mmap_address{};
 
-    unsigned long long m_original_rip_instruction
-    ;
+    unsigned long long m_original_rip_instruction;
+
+    unsigned long long m_original_offset;
+    unsigned long long m_hook_offset;
 };
 
 struct Registers{
@@ -58,6 +61,7 @@ private:
         int m_pid_int{};
         std::string m_program_name{};
         std::string m_lib_path{};
+        std::string m_lib_name{};
 
         SysData m_sys_data{};
         Registers m_reg_data{};
@@ -74,7 +78,7 @@ private:
         LoaderSystem() = delete;
         bool fetch_data(SessionInterfaces& session_interface);
         bool ptrace_load(SessionInterfaces& session_interface);
-        bool trigger_hook(SessionInterfaces& session_interface, std::string& lib_name);
+        bool trigger_hook(SessionInterfaces& session_interface);
     };
 
     std::unique_ptr<LoaderSystem> m_protected_system;
@@ -125,8 +129,15 @@ public:
     void safe_ptrace_load(){
         m_protected_system->ptrace_load(*this);
     }
-    void safe_trigger_hook(std::string lib_name){
-        m_protected_system->trigger_hook(*this, lib_name);
+    void safe_trigger_hook(){
+        //1119 offset to hook fcn
+     //2377 offset to original fcn
+        std::cout << "Enter lib name : ";
+        std::cin >>  m_protected_system->m_lib_name;
+        m_protected_system->m_sys_data.m_original_offset = prompt_offset("Enter original function offset : ");
+        m_protected_system->m_sys_data.m_hook_offset = prompt_offset("Enter hook function offset : ");
+        
+        m_protected_system->trigger_hook(*this);
     }
     bool do_cleanup();
 

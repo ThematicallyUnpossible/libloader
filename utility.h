@@ -12,6 +12,14 @@ inline void refresh_cin(){
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 }
 
+inline unsigned long long prompt_offset(std::string_view prompt){
+    std::cout << prompt;
+    std::string original_offset_string{};
+    std::cin >>  original_offset_string;
+
+    return std::stoull(original_offset_string, nullptr, 16);
+}
+
 template<typename T>
     requires std::is_arithmetic_v<T>
     inline void prompt_mutate(std::string_view prefix, std::string_view line, T& target, T min = std::numeric_limits<T>::min(), T max = std::numeric_limits<T>::max() ){

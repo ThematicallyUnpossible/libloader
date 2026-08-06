@@ -25,7 +25,7 @@ int main(int argc, const char* argv[]){
             continue;
         }
         else if(operation.m_operation_enum == Operation::HOOK_TRIGGER){
-            main_session->safe_trigger_hook("libfcnhook.so");
+            main_session->safe_trigger_hook();
             continue;
         }
     }

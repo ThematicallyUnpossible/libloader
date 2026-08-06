@@ -100,7 +100,7 @@ bool Session::LoaderSystem::fetch_data(SessionInterfaces& session_interface){
     }
 
 
-bool Session::LoaderSystem::trigger_hook(SessionInterfaces& session_interface, std::string& lib_name){
+bool Session::LoaderSystem::trigger_hook(SessionInterfaces& session_interface){
     
 
     std::string path_to_maps = "/proc/"  +  m_pid_string  +  "/maps";
@@ -111,7 +111,7 @@ bool Session::LoaderSystem::trigger_hook(SessionInterfaces& session_interface, s
     }
     std::string current_page;
     while(getline(maps_fstream,  current_page)){
-        if(current_page.find(lib_name) != std::string::npos){
+        if(current_page.find(m_lib_name) != std::string::npos){
             std::size_t dash_index = current_page.find('-');
             std::string base_addr_string =   current_page.substr(0, dash_index);
             m_sys_data.m_custom_base = (std::stoull(base_addr_string,  nullptr, 16));
@@ -131,7 +131,7 @@ bool Session::LoaderSystem::trigger_hook(SessionInterfaces& session_interface, s
     bytes_to_write[5] = 0x00;
 
 
-    unsigned long long hook_address = m_sys_data.m_custom_base + 0x1119;
+    unsigned long long hook_address = m_sys_data.m_custom_base + m_sys_data.m_hook_offset;
 
 
     memcpy(&bytes_to_write[6], &hook_address, 8);
@@ -142,7 +142,7 @@ bool Session::LoaderSystem::trigger_hook(SessionInterfaces& session_interface, s
         return false;
     }
 
-    unsigned long long original_function = m_sys_data.m_program_base + 0x2377;
+    unsigned long long original_function = m_sys_data.m_program_base + m_sys_data.m_original_offset;
 
     lseek(fd, original_function, SEEK_SET);
     write(fd, &bytes_to_write, 14);
